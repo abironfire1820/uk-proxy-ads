@@ -1,1 +1,0 @@
-# uk-proxy-ads
