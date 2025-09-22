@@ -1,0 +1,117 @@
+# This is a Python script for a Telegram bot that analyzes uploaded chart screenshots
+# using a pre-trained YOLOv8 model for stock market pattern detection.
+# The model detects patterns like Head and Shoulders, etc., and provides up/down signals
+# for Forex and Binary trading.
+#
+# Requirements:
+# - Install libraries: pip install pyTelegramBotAPI ultralytics opencv-python numpy
+# - Download the model.pt from: https://huggingface.co/foduucom/stockmarket-pattern-detection-yolov8
+#   Place it in the same directory as this script, named 'model.pt'
+# - Replace 'YOUR_TELEGRAM_BOT_TOKEN' with your actual Telegram bot token.
+# - Run this script in Termux or any Python environment.
+# - Upload a screenshot of the trading chart to the bot, and it will analyze and provide signals.
+#
+# Note: Trading signals are based on detected patterns and are not guaranteed to be accurate.
+# Market prediction is inherently uncertain; aim for moderate accuracy as requested.
+# No guarantee of 80% accuracy, but the model is designed for high detection accuracy.
+
+import telebot
+import os
+from ultralytics import YOLO
+from datetime import datetime
+
+# Load the YOLO model
+model_path = 'model.pt'  # Ensure this file is in the current directory
+if not os.path.exists(model_path):
+    raise FileNotFoundError("Model file 'model.pt' not found. Download from Hugging Face.")
+model = YOLO(model_path)
+
+# Define pattern classes (from the model)
+classes = ['Head and shoulders bottom', 'Head and shoulders top', 'M_Head', 'StockLine', 'Triangle', 'W_Bottom']
+
+# Signal mapping based on patterns (simplified for up/down)
+signal_map = {
+    'Head and shoulders bottom': {'direction': 'Up', 'description': 'Bullish reversal', 'forex_extent': '50-100 pips', 'binary_time': '5-15 min'},
+    'Head and shoulders top': {'direction': 'Down', 'description': 'Bearish reversal', 'forex_extent': '50-100 pips', 'binary_time': '5-15 min'},
+    'M_Head': {'direction': 'Down', 'description': 'Bearish (double top)', 'forex_extent': '30-80 pips', 'binary_time': '1-5 min'},
+    'StockLine': {'direction': 'Neutral', 'description': 'Trend line - check manually', 'forex_extent': 'N/A', 'binary_time': 'N/A'},
+    'Triangle': {'direction': 'Breakout', 'description': 'Potential up or down breakout', 'forex_extent': '20-50 pips', 'binary_time': '15-30 min'},
+    'W_Bottom': {'direction': 'Up', 'description': 'Bullish (double bottom)', 'forex_extent': '30-80 pips', 'binary_time': '1-5 min'}
+}
+
+# Initialize Telegram bot
+bot = telebot.TeleBot('YOUR_TELEGRAM_BOT_TOKEN')
+
+@bot.message_handler(content_types=['photo'])
+def handle_photo(message):
+    try:
+        # Download the uploaded photo
+        file_info = bot.get_file(message.photo[-1].file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        
+        # Save the image temporarily
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        image_path = f'temp_chart_{timestamp}.jpg'
+        with open(image_path, 'wb') as f:
+            f.write(downloaded_file)
+        
+        # Run YOLO model on the image
+        results = model(image_path, save=True)
+        
+        # Get the save directory for annotated image
+        if results and results[0].save_dir:
+            predict_dir = results[0].save_dir
+            # Find the annotated image (usually named after the input)
+            annotated_path = os.path.join(predict_dir, os.path.basename(image_path))
+            if not os.path.exists(annotated_path):
+                annotated_path = image_path  # Fallback to original if not found
+        else:
+            annotated_path = image_path
+        
+        # Process results to get signals
+        if results and results[0].boxes:
+            class_indices = results[0].boxes.cls.tolist()
+            confs = results[0].boxes.conf.tolist()
+            
+            if confs:
+                # Get the pattern with highest confidence
+                max_conf_idx = confs.index(max(confs))
+                pattern_idx = int(class_indices[max_conf_idx])
+                pattern = classes[pattern_idx]
+                conf = confs[max_conf_idx]
+                
+                # Get signal info
+                signal_info = signal_map.get(pattern, {'direction': 'Unknown', 'description': '', 'forex_extent': 'N/A', 'binary_time': 'N/A'})
+                
+                # Generate signals
+                forex_signal = f"Forex: {signal_info['direction']} ({signal_info['description']}) - Expected movement: {signal_info['forex_extent']}"
+                binary_signal = f"Binary: {signal_info['direction']} for next {signal_info['binary_time']} candle"
+                
+                response = f"Detected Pattern: {pattern} (Confidence: {conf:.2f})\n\n{forex_signal}\n{binary_signal}"
+            else:
+                response = "No confident pattern detected."
+        else:
+            response = "No pattern detected in the chart."
+        
+        # Send response text
+        bot.reply_to(message, response)
+        
+        # Send annotated image back
+        with open(annotated_path, 'rb') as photo:
+            bot.send_photo(message.chat.id, photo, caption="Annotated Chart with Detected Patterns")
+        
+        # Clean up temporary files (optional, to save space)
+        os.remove(image_path)
+        if annotated_path != image_path:
+            os.remove(annotated_path)
+    
+    except Exception as e:
+        bot.reply_to(message, f"Error processing image: {str(e)}")
+
+# Start the bot
+if __name__ == '__main__':
+    print("Bot is running...")
+    bot.polling(none_stop=True)        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    - name: Test with pytest
+      run: |
+        pytest
